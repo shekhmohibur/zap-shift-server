@@ -50,13 +50,16 @@ async function run() {
       }
     });
     //deleting parcel from db
+    const { ObjectId } = require("mongodb");
+
     app.delete("/parcels/:id", async (req, res) => {
       const id = req.params.id;
-      const query = { _id: id };   
-      console.log(query);
-      
+
+      const query = { _id: new ObjectId(id) }; // convert string to ObjectId
       const deleteParcel = await parcelCollection.deleteOne(query);
-      res.send(deleteParcel);   
+      console.log(deleteParcel);
+      
+      res.send(deleteParcel);
     });
 
     await client.db("admin").command({ ping: 1 });
