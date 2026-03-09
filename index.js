@@ -2,10 +2,15 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 dotenv.config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const port = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+  }),
+);
 app.use(express.json());
 
 app.get("/", (req, res) => {
@@ -31,12 +36,31 @@ async function run() {
     //CRUDS are here
     app.get("/parcels", async (req, res) => {
       const email = req.query.email;
-      const query = email ? { created_by: email } : {};
+      const parcelId = req.query.parcelId;
+
+      // Build query based on the provided parameters
+      const query = {};
+
+      if (email) {
+        query.created_by = email;
+      }
+
+      if (parcelId) {
+        query._id = new ObjectId(parcelId); // Assuming _id is the field for parcelId
+      }
+
       const options = {
         sort: { createdAt: -1 },
       };
-      const parcels = await parcelCollection.find(query, options).toArray();
-      res.send(parcels);
+
+      try {
+        const parcels = await parcelCollection.find(query, options).toArray();
+        res.send(parcels);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ error: "An error occurred while fetching parcels" });
+      }
     });
     //adding parcel to db
     app.post("/parcels", async (req, res) => {
@@ -58,10 +82,23 @@ async function run() {
       const query = { _id: new ObjectId(id) }; // convert string to ObjectId
       const deleteParcel = await parcelCollection.deleteOne(query);
       console.log(deleteParcel);
-      
+
       res.send(deleteParcel);
     });
+    app.post("/create-payment-intent", async (req, res) => {
+      const { amount:price } = req.body;
 
+      const amount = parseInt(price * 100);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: "usd",
+        payment_method_types: ["card"],
+      });
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
+    });
+    // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
