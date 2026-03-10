@@ -32,7 +32,7 @@ async function run() {
     await client.connect();
     //collections are here
     const parcelCollection = client.db("parcelDB").collection("parcels");
-
+    const paymentCollection = client.db("parcelDB").collection("payments");
     //CRUDS are here
     app.get("/parcels", async (req, res) => {
       const email = req.query.email;
@@ -85,8 +85,9 @@ async function run() {
 
       res.send(deleteParcel);
     });
+    //payment intent
     app.post("/create-payment-intent", async (req, res) => {
-      const { amount:price } = req.body;
+      const { amount: price } = req.body;
 
       const amount = parseInt(price * 100);
       const paymentIntent = await stripe.paymentIntents.create({
@@ -97,6 +98,83 @@ async function run() {
       res.send({
         clientSecret: paymentIntent.client_secret,
       });
+    });
+    // saving payment history
+    app.post("/payments", async (req, res) => {
+      const payment = req.body;
+
+      const paymentDoc = {
+        parcelId: payment.parcelId,
+        email: payment.email,
+        name: payment.name,
+        amount: payment.amount,
+        currency: "usd",
+        paymentMethod: "card",
+        transactionId: payment.transactionId,
+        payment_status: "paid",
+        created_at: new Date().toISOString(),
+        paid_at: new Date(),
+      };
+
+      try {
+        // store payment history
+        const paymentResult = await paymentCollection.insertOne(paymentDoc);
+
+        // update parcel payment status
+        const query = { _id: new ObjectId(payment.parcelId) };
+
+        const updateDoc = {
+          $set: {
+            payment_status: "paid",
+            transactionId: payment.transactionId,
+          },
+        };
+
+        const updateResult = await parcelCollection.updateOne(query, updateDoc);
+
+        res.send({
+          success: true,
+          paymentResult,
+          updateResult,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Payment failed" });
+      }
+    });
+    //get payments
+    app.get("/payments", async (req, res) => {
+      const { email, parcelId, transactionId, status } = req.query;
+
+      const query = {};
+
+      if (email) {
+        query.email = email;
+      }
+
+      if (parcelId) {
+        query.parcelId = parcelId;
+      }
+
+      if (transactionId) {
+        query.transactionId = transactionId;
+      }
+
+      if (status) {
+        query.payment_status = status;
+      }
+
+      try {
+        const payments = await paymentCollection
+          .find(query)
+          .sort({ created_at: -1 })
+          .toArray();
+
+        res.send(payments);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to fetch payments" });
+      }
     });
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
