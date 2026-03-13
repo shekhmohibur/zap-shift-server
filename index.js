@@ -4,6 +4,8 @@ const dotenv = require("dotenv");
 dotenv.config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const app = express();
+const admin = require("firebase-admin");
+const serviceAccount = require("./fbPrivateKey.json");
 const port = process.env.PORT || 5000;
 
 app.use(
@@ -12,6 +14,11 @@ app.use(
   }),
 );
 app.use(express.json());
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
@@ -33,7 +40,38 @@ async function run() {
     //collections are here
     const parcelCollection = client.db("parcelDB").collection("parcels");
     const paymentCollection = client.db("parcelDB").collection("payments");
+    const usersCollection = client.db("parcelDB").collection("users");
+    //custom middleware
+    const verifyFBtoken = async(req, res, next) =>{
+      const authHeader = req.headers.authorization;
+      if(!authHeader){
+        return res.status(401).send({message: 'unauthorized access'})
+      }
+      const token = authHeader.split(' ')[1];
+      if(!token){
+        return res.status(401).send({message: 'unauthorized access'})
+      }
+    }
     //CRUDS are here
+    //adding user to db
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+      const query = { email: user.email };
+      const existingUser = await usersCollection.findOne(query);
+
+      if (existingUser) {
+        return res.send({ message: "User already exists", insertedId: null });
+      }
+
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+    //get users
+    app.get("/users", async (req, res) => {
+      const cursor = usersCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
     app.get("/parcels", async (req, res) => {
       const email = req.query.email;
       const parcelId = req.query.parcelId;
@@ -102,7 +140,6 @@ async function run() {
     // saving payment history
     app.post("/payments", async (req, res) => {
       const payment = req.body;
-
       const paymentDoc = {
         parcelId: payment.parcelId,
         email: payment.email,
@@ -143,9 +180,8 @@ async function run() {
       }
     });
     //get payments
-    app.get("/payments", async (req, res) => {
+    app.get("/payments",verifyFBtoken, async (req, res) => {
       const { email, parcelId, transactionId, status } = req.query;
-
       const query = {};
 
       if (email) {
