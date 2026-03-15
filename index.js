@@ -16,9 +16,8 @@ app.use(
 app.use(express.json());
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
-
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
@@ -42,16 +41,23 @@ async function run() {
     const paymentCollection = client.db("parcelDB").collection("payments");
     const usersCollection = client.db("parcelDB").collection("users");
     //custom middleware
-    const verifyFBtoken = async(req, res, next) =>{
+    const verifyFBtoken = async (req, res, next) => {
       const authHeader = req.headers.authorization;
-      if(!authHeader){
-        return res.status(401).send({message: 'unauthorized access'})
+      if (!authHeader) {
+        return res.status(401).send({ message: "unauthorized access" });
       }
-      const token = authHeader.split(' ')[1];
-      if(!token){
-        return res.status(401).send({message: 'unauthorized access'})
+      const token = authHeader.split(" ")[1];
+      if (!token) {
+        return res.status(401).send({ message: "unauthorized access" });
       }
-    }
+      try {
+        const decodedUser = await admin.auth().verifyIdToken(token);
+        req.decodedUser = decodedUser;
+        next();
+      } catch (error) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+    };
     //CRUDS are here
     //adding user to db
     app.post("/users", async (req, res) => {
@@ -67,14 +73,18 @@ async function run() {
       res.send(result);
     });
     //get users
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyFBtoken, async (req, res) => {
       const cursor = usersCollection.find();
       const result = await cursor.toArray();
+      if (req.decodedUser.email !== req.query.email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
       res.send(result);
     });
     app.get("/parcels", async (req, res) => {
       const email = req.query.email;
       const parcelId = req.query.parcelId;
+      const trackingId = req.query.tracking_id;
 
       // Build query based on the provided parameters
       const query = {};
@@ -86,12 +96,17 @@ async function run() {
       if (parcelId) {
         query._id = new ObjectId(parcelId); // Assuming _id is the field for parcelId
       }
-
+      if (trackingId) {
+        query.tracking_id = trackingId;
+      }
       const options = {
         sort: { createdAt: -1 },
       };
 
       try {
+        if (req.decodedUser.email !== email) {
+          return res.status(403).send({ message: "forbidden access" });
+        }
         const parcels = await parcelCollection.find(query, options).toArray();
         res.send(parcels);
       } catch (error) {
@@ -180,7 +195,7 @@ async function run() {
       }
     });
     //get payments
-    app.get("/payments",verifyFBtoken, async (req, res) => {
+    app.get("/payments", verifyFBtoken, async (req, res) => {
       const { email, parcelId, transactionId, status } = req.query;
       const query = {};
 
@@ -201,6 +216,9 @@ async function run() {
       }
 
       try {
+        if (req.decodedUser.email !== email) {
+          return res.status(403).send({ message: "forbidden access" });
+        }
         const payments = await paymentCollection
           .find(query)
           .sort({ created_at: -1 })
