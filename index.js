@@ -24,6 +24,7 @@ app.get("/", (req, res) => {
 });
 
 const { MongoClient, ServerApiVersion } = require("mongodb");
+const { log } = require("firebase/firestore/pipelines");
 const uri = process.env.DB_URI;
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -40,6 +41,7 @@ async function run() {
     const parcelCollection = client.db("parcelDB").collection("parcels");
     const paymentCollection = client.db("parcelDB").collection("payments");
     const usersCollection = client.db("parcelDB").collection("users");
+    const ridersCollection = client.db("parcelDB").collection("riders");
     //custom middleware
     const verifyFBtoken = async (req, res, next) => {
       const authHeader = req.headers.authorization;
@@ -72,21 +74,211 @@ async function run() {
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
-    //get users
-    app.get("/users", verifyFBtoken, async (req, res) => {
-      const cursor = usersCollection.find();
-      const result = await cursor.toArray();
-      if (req.decodedUser.email !== req.query.email) {
-        return res.status(403).send({ message: "forbidden access" });
+    //adding rider
+    app.post("/riders", async (req, res) => {
+      const rider = req.body;
+      const query = { email: rider.email };
+      const existingRider = await ridersCollection.findOne(query);
+
+      if (existingRider) {
+        return res.send({ message: "Rider already exists", insertedId: null });
       }
+
+      const result = await ridersCollection.insertOne(rider);
       res.send(result);
     });
-    app.get("/parcels", async (req, res) => {
+    //get riders
+    app.get("/riders", async (req, res) => {
+      try {
+        const { status } = req.query; // get status from query params
+        const query = status ? { status } : {}; // if status exists, filter by it
+
+        const cursor = ridersCollection.find(query);
+        const result = await cursor.toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching riders:", error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
+    //update rider status
+    app.patch("/riders/update/:id", async (req, res) => {
+      const id = req.params.id;
+      const status = req.body.status;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          status: status,
+        },
+      };
+      const result = await ridersCollection.updateOne(query, updateDoc);
+      res.send(result);
+    });
+    //delete rider
+    app.delete("/riders/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const deleteRider = await ridersCollection.deleteOne(query);
+      res.send(deleteRider);
+    });
+    //get users
+    app.get("/users", verifyFBtoken, async (req, res) => {
       const email = req.query.email;
+      // Get the logged-in user from DB
+      const loggedInUser = await usersCollection.findOne({
+        email: req.decodedUser.email,
+      });
+
+      // Check if admin
+      const isAdmin = loggedInUser?.role === "admin";
+
+      let query = {};
+
+      if (isAdmin) {
+        // Admin can search anything
+        query = email ? { email } : {};
+      } else {
+        // Non-admin can only see their own data
+        if (!loggedInUser) {
+          return res.status(401).send({ message: "unauthorized" });
+        }
+        query = { email: req.decodedUser.email };
+      }
+
+      const result = await usersCollection.find(query).toArray();
+      res.send(result);
+    });
+    //update user email and
+    app.patch("/users", async (req, res) => {
+      const email = req.query.email;
+      const role = req.body.role;
+      const query = { email: email };
+      const updateDoc = {
+        $set: {
+          role: role,
+        },
+      };
+      const result = await usersCollection.updateOne(query, updateDoc);
+      res.send(result);
+    });
+    //update user using put
+    app.put("/users", async (req, res) => {
+      try {
+        const email = req.query.email;
+        const updatedData = req.body;
+
+        if (!email) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+
+        const query = { email: email };
+
+        const updateDoc = {
+          $set: updatedData,
+        };
+
+        const result = await usersCollection.updateOne(query, updateDoc);
+
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Internal server error" });
+      }
+    });
+    //update user by id
+    app.patch("/users/update/:id", verifyFBtoken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { role, status } = req.body;
+
+        // 🔐 check admin
+        const loggedInUser = await usersCollection.findOne({
+          email: req.decodedUser.email,
+        });
+
+        if (loggedInUser?.role !== "admin") {
+          return res.status(403).send({ message: "forbidden access" });
+        }
+
+        // ❗ validate ObjectId
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: "Invalid user ID" });
+        }
+
+        const query = { _id: new ObjectId(id) };
+
+        // dynamic update (only send what exists)
+        const updateFields = {};
+        if (role) updateFields.role = role;
+        if (status) updateFields.status = status;
+
+        const updateDoc = {
+          $set: updateFields,
+        };
+
+        const result = await usersCollection.updateOne(query, updateDoc);
+
+        res.send(result);
+      } catch (error) {
+        console.error("Update user error:", error);
+        res.status(500).send({ message: "Failed to update user" });
+      }
+    });
+    //delete single user
+    app.delete("/users/:id", verifyFBtoken, async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        // 🔐 check admin
+        const loggedInUser = await usersCollection.findOne({
+          email: req.decodedUser.email,
+        });
+
+        if (loggedInUser?.role !== "admin") {
+          return res.status(403).send({ message: "forbidden access" });
+        }
+
+        const query = { _id: new ObjectId(id) };
+        const result = await usersCollection.deleteOne(query);
+
+        res.send(result);
+      } catch (error) {
+        console.error("Delete user error:", error);
+        res.status(500).send({ message: "Failed to delete user" });
+      }
+    });
+    //delete multiple user
+    app.post("/users/delete-many", verifyFBtoken, async (req, res) => {
+      try {
+        const { ids } = req.body;
+
+        // 🔐 check admin
+        const loggedInUser = await usersCollection.findOne({
+          email: req.decodedUser.email,
+        });
+
+        if (loggedInUser?.role !== "admin") {
+          return res.status(403).send({ message: "forbidden access" });
+        }
+
+        const objectIds = ids.map((id) => new ObjectId(id));
+
+        const result = await usersCollection.deleteMany({
+          _id: { $in: objectIds },
+        });
+
+        res.send(result);
+      } catch (error) {
+        console.error("Bulk delete error:", error);
+        res.status(500).send({ message: "Failed to delete users" });
+      }
+    });
+    //get parcels
+    app.get("/parcels", async (req, res) => {
       const parcelId = req.query.parcelId;
       const trackingId = req.query.tracking_id;
-
-      // Build query based on the provided parameters
+      const email = req.query.email;
       const query = {};
 
       if (email) {
@@ -94,27 +286,51 @@ async function run() {
       }
 
       if (parcelId) {
-        query._id = new ObjectId(parcelId); // Assuming _id is the field for parcelId
+        if (!ObjectId.isValid(parcelId)) {
+          return res.status(400).send({ message: "Invalid parcelId" });
+        }
+        query._id = new ObjectId(parcelId);
       }
+
       if (trackingId) {
         query.tracking_id = trackingId;
       }
+
       const options = {
         sort: { createdAt: -1 },
       };
 
       try {
-        if (req.decodedUser.email !== email) {
-          return res.status(403).send({ message: "forbidden access" });
-        }
         const parcels = await parcelCollection.find(query, options).toArray();
         res.send(parcels);
       } catch (error) {
-        res
-          .status(500)
-          .send({ error: "An error occurred while fetching parcels" });
+        res.status(500).send({
+          error: "An error occurred while fetching parcels",
+        });
       }
     });
+    
+    //updating parcel
+app.patch("/parcels", async (req, res) => {
+  try {
+    const id = req.query.parcelId;
+    const { delivery_status } = req.body;
+
+    const query = { _id: new ObjectId(id) };
+
+    const updateDoc = {
+      $set: {
+        delivery_status: delivery_status, 
+      },
+    };
+
+    const result = await parcelCollection.updateOne(query, updateDoc);
+
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ error: "Failed to update status" });
+  }
+});
     //adding parcel to db
     app.post("/parcels", async (req, res) => {
       try {
