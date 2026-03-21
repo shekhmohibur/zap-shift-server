@@ -460,6 +460,11 @@ async function run() {
 
 run().catch(console.dir);
 
-app.listen(port, () => {
-  console.log(`app listening on port ${port}`);
-});
+// Works locally AND on Vercel
+if (process.env.NODE_ENV !== "production") {
+  app.listen(port, () => {
+    console.log(`app listening on port ${port}`);
+  });
+}
+
+module.exports = app;
