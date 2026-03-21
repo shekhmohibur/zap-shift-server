@@ -20,9 +20,11 @@ app.use(
 );
 app.use(express.json());
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 
 app.get("/", (req, res) => {
   res.send("Hello World!");
