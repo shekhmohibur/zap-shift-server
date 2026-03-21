@@ -5,7 +5,9 @@ dotenv.config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const admin = require("firebase-admin");
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_KEY);
+const serviceAccount = JSON.parse(
+  Buffer.from(process.env.FIREBASE_SERVICE_KEY, "base64").toString("utf8"),
+);
 const port = process.env.PORT || 5000;
 
 app.use(
@@ -309,28 +311,28 @@ async function run() {
         });
       }
     });
-    
+
     //updating parcel
-app.patch("/parcels", async (req, res) => {
-  try {
-    const id = req.query.parcelId;
-    const { delivery_status } = req.body;
+    app.patch("/parcels", async (req, res) => {
+      try {
+        const id = req.query.parcelId;
+        const { delivery_status } = req.body;
 
-    const query = { _id: new ObjectId(id) };
+        const query = { _id: new ObjectId(id) };
 
-    const updateDoc = {
-      $set: {
-        delivery_status: delivery_status, 
-      },
-    };
+        const updateDoc = {
+          $set: {
+            delivery_status: delivery_status,
+          },
+        };
 
-    const result = await parcelCollection.updateOne(query, updateDoc);
+        const result = await parcelCollection.updateOne(query, updateDoc);
 
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ error: "Failed to update status" });
-  }
-});
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to update status" });
+      }
+    });
     //adding parcel to db
     app.post("/parcels", async (req, res) => {
       try {
