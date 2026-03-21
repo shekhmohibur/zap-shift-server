@@ -5,15 +5,18 @@ dotenv.config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const admin = require("firebase-admin");
-const serviceAccount = JSON.parse(
-  Buffer.from(process.env.FIREBASE_SERVICE_KEY, "base64").toString("utf8"),
-);
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_KEY);
 const port = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: "*",
-  }),
+    origin: [
+      "https://zapshiftv1.vercel.app",
+      "http://localhost:5173"
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  })
 );
 app.use(express.json());
 
@@ -458,4 +461,6 @@ async function run() {
 }
 run().catch(console.dir);
 
-module.exports = app;
+app.listen(port, () => {
+  console.log(`app listening on port ${port}`);
+});
