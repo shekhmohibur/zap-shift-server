@@ -5,7 +5,7 @@ dotenv.config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const admin = require("firebase-admin");
-const serviceAccount = require("./fbPrivateKey.json");
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_KEY);
 const port = process.env.PORT || 5000;
 
 app.use(
