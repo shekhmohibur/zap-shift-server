@@ -100,30 +100,6 @@ async function run() {
       }
     });
 
-    // get users
-    // app.get("/users", async (req, res) => {
-    //   try {
-    //     const email = req.query.email;
-    //     const loggedInUser = await usersCollection.findOne({
-    //       email: req.decodedUser.email,
-    //     });
-    //     const isAdmin = loggedInUser?.role === "admin";
-    //     let query = {};
-    //     if (isAdmin) {
-    //       query = email ? { email } : {};
-    //     } else {
-    //       if (!loggedInUser) {
-    //         return res.status(401).send({ message: "unauthorized" });
-    //       }
-    //       query = { email: req.decodedUser.email };
-    //     }
-    //     const result = await usersCollection.find(query).toArray();
-    //     res.send(result);
-    //   } catch (error) {
-    //     console.error("Get users error:", error);
-    //     res.status(500).send({ message: "Failed to fetch users" });
-    //   }
-    // });
 app.get("/users", verifyFBtoken, async (req, res) => {
   try {
     const loggedInUser = await usersCollection.findOne({
