@@ -27,13 +27,10 @@ const port = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: [
-      "https://zapshiftv1.vercel.app",
-      "http://localhost:5173",
-    ],
+    origin: ["https://zapshiftv1.vercel.app", "http://localhost:5173"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  })
+  }),
 );
 app.use(express.json());
 
@@ -84,7 +81,6 @@ async function run() {
         return res.status(403).send({ message: "forbidden access" });
       }
     };
-
     // ── Users ──────────────────────────────────────────────────────────────────
 
     // add user
@@ -105,37 +101,69 @@ async function run() {
     });
 
     // get users
-    app.get("/users", verifyFBtoken, async (req, res) => {
-      try {
-        const email = req.query.email;
-        const loggedInUser = await usersCollection.findOne({
-          email: req.decodedUser.email,
-        });
-        const isAdmin = loggedInUser?.role === "admin";
-        let query = {};
-        if (isAdmin) {
-          query = email ? { email } : {};
-        } else {
-          if (!loggedInUser) {
-            return res.status(401).send({ message: "unauthorized" });
-          }
-          query = { email: req.decodedUser.email };
-        }
-        const result = await usersCollection.find(query).toArray();
-        res.send(result);
-      } catch (error) {
-        console.error("Get users error:", error);
-        res.status(500).send({ message: "Failed to fetch users" });
-      }
+    // app.get("/users", async (req, res) => {
+    //   try {
+    //     const email = req.query.email;
+    //     const loggedInUser = await usersCollection.findOne({
+    //       email: req.decodedUser.email,
+    //     });
+    //     const isAdmin = loggedInUser?.role === "admin";
+    //     let query = {};
+    //     if (isAdmin) {
+    //       query = email ? { email } : {};
+    //     } else {
+    //       if (!loggedInUser) {
+    //         return res.status(401).send({ message: "unauthorized" });
+    //       }
+    //       query = { email: req.decodedUser.email };
+    //     }
+    //     const result = await usersCollection.find(query).toArray();
+    //     res.send(result);
+    //   } catch (error) {
+    //     console.error("Get users error:", error);
+    //     res.status(500).send({ message: "Failed to fetch users" });
+    //   }
+    // });
+app.get("/users", verifyFBtoken, async (req, res) => {
+  try {
+    const loggedInUser = await usersCollection.findOne({
+      email: req.decodedUser.email,
     });
 
+    const isAdmin = loggedInUser?.role === "admin";
+    const isMainAdmin = req.decodedUser.email === "mohibur@gmail.com";
+
+    let query = {};
+
+    if (isAdmin) {
+      // Admin can use query params
+      query = req.query;
+    } else {
+      // Non-admin → only their own data
+      query = { email: req.decodedUser.email };
+    }
+
+    const result = await usersCollection.find(query).toArray();
+
+    res.send({
+      data: result,
+      isMainAdmin,
+      notMainAdmin: !isMainAdmin,
+    });
+
+  } catch (error) {
+    console.error("Get users error:", error);
+    res.status(500).send({ message: "Failed to fetch users" });
+  }
+});
     // update user role (by email)
     app.patch("/users", async (req, res) => {
       try {
         const email = req.query.email;
         const role = req.body.role;
+        const adminStatus = req.body.adminStatus;
         const query = { email };
-        const updateDoc = { $set: { role } };
+        const updateDoc = { $set: { role, adminStatus } };
         const result = await usersCollection.updateOne(query, updateDoc);
         res.send(result);
       } catch (error) {
@@ -238,7 +266,10 @@ async function run() {
         const query = { email: rider.email };
         const existingRider = await ridersCollection.findOne(query);
         if (existingRider) {
-          return res.send({ message: "Rider already exists", insertedId: null });
+          return res.send({
+            message: "Rider already exists",
+            insertedId: null,
+          });
         }
         const result = await ridersCollection.insertOne(rider);
         res.send(result);
@@ -316,7 +347,9 @@ async function run() {
         res.send(parcels);
       } catch (error) {
         console.error("Get parcels error:", error);
-        res.status(500).send({ error: "An error occurred while fetching parcels" });
+        res
+          .status(500)
+          .send({ error: "An error occurred while fetching parcels" });
       }
     });
 
@@ -427,7 +460,9 @@ async function run() {
 
         // Require email param — without it the query returns all payments
         if (!email) {
-          return res.status(400).send({ message: "email query param is required" });
+          return res
+            .status(400)
+            .send({ message: "email query param is required" });
         }
 
         // Verify the requesting user owns this email
@@ -452,7 +487,9 @@ async function run() {
     });
 
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!",
+    );
   } finally {
     // client stays open for the lifetime of the server
   }
